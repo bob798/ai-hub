@@ -1,6 +1,16 @@
 /* ============================================================
  * AI 学径 — 课程数据
  * 全部静态数据：课程大纲、测验、闪卡、面试题、术语表
+ *
+ * 维护说明见 docs/维护指南.md。各数据结构速查：
+ *   CURRICULUM   阶段[] → { id,title,subtitle,weeks,desc, lessons:[
+ *                  { id,title,minutes, content(HTML字符串), resources:[{name,url}] } ] }
+ *   QUIZZES      { 阶段id: [ { q, options[], answer(下标,从0), explain } ] }
+ *   FLASHCARDS   [ { id, tag, front, back } ]
+ *   INTERVIEW_QA [ { cat, q, a } ]
+ *   GLOSSARY     [ { term, en, def } ]
+ * 约定：所有 id 全局唯一；新增阶段须在 QUIZZES 加同名 id 的测验。
+ * 改完跑 docs/维护指南.md 里的校验脚本自检。
  * ============================================================ */
 
 const CURRICULUM = [
