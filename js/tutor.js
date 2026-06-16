@@ -21,6 +21,67 @@ const TUTOR_SYSTEM = `你是「AI 学径」应用内置的 AI 学习导师，服
 
 function getApiKey() { return localStorage.getItem(KEY_STORE) || ""; }
 
+/* ---------------- 轻量 Markdown 渲染 ----------------
+ * 先整体转义防 XSS，再按行解析常见语法：代码块、标题、列表、
+ * 行内代码、加粗、斜体、链接。专为 LLM 回复设计，足够日常使用。 */
+function mdToHtml(src) {
+  const blocks = String(src).split(/```/);
+  let out = "";
+  blocks.forEach((chunk, i) => {
+    if (i % 2 === 1) {
+      // 代码块（奇数段在 ``` 之间）
+      const body = chunk.replace(/^[a-zA-Z0-9]*\n/, ""); // 去掉语言标注行
+      out += `<pre class="md-pre"><code>${esc(body.replace(/\n$/, ""))}</code></pre>`;
+    } else {
+      out += mdInlineBlocks(chunk);
+    }
+  });
+  return out;
+}
+
+function mdInlineBlocks(text) {
+  const lines = text.split("\n");
+  let html = "", listType = null, para = [];
+  const flushPara = () => {
+    if (para.length) { html += `<p>${para.join("<br>")}</p>`; para = []; }
+  };
+  const closeList = () => { if (listType) { html += `</${listType}>`; listType = null; } };
+  for (let raw of lines) {
+    const line = raw.trimEnd();
+    if (!line.trim()) { flushPara(); closeList(); continue; }
+    let m;
+    if ((m = line.match(/^(#{1,4})\s+(.*)$/))) {
+      flushPara(); closeList();
+      const lvl = Math.min(m[1].length + 2, 6);
+      html += `<h${lvl} class="md-h">${mdSpan(m[2])}</h${lvl}>`;
+    } else if ((m = line.match(/^\s*[-*]\s+(.*)$/))) {
+      flushPara();
+      if (listType !== "ul") { closeList(); html += "<ul class='md-ul'>"; listType = "ul"; }
+      html += `<li>${mdSpan(m[1])}</li>`;
+    } else if ((m = line.match(/^\s*\d+\.\s+(.*)$/))) {
+      flushPara();
+      if (listType !== "ol") { closeList(); html += "<ol class='md-ol'>"; listType = "ol"; }
+      html += `<li>${mdSpan(m[1])}</li>`;
+    } else {
+      closeList();
+      para.push(mdSpan(line));
+    }
+  }
+  flushPara(); closeList();
+  return html;
+}
+
+// 行内：先转义，再套用 行内代码 / 粗体 / 斜体 / 链接
+function mdSpan(s) {
+  let t = esc(s);
+  t = t.replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`);
+  t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  t = t.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g,
+    (_, txt, url) => `<a href="${url}" target="_blank" rel="noopener">${txt}</a>`);
+  return t;
+}
+
 function renderTutor() {
   if (!getApiKey()) { renderKeySetup(); return; }
   renderChatUI();
@@ -99,7 +160,7 @@ function renderChatUI() {
             ${SUGGESTIONS.map(s => `<button class="chip" onclick="sendMessage('${s}')">${s}</button>`).join("")}
           </div>
         </div>` :
-        msgs.map(m => `<div class="msg ${m.role}">${esc(m.content)}</div>`).join("")}
+        msgs.map(m => `<div class="msg ${m.role}">${m.role === "assistant" ? mdToHtml(m.content) : esc(m.content)}</div>`).join("")}
     </div>
     <div class="chat-input-row">
       <textarea id="chat-input" placeholder="输入你的问题…（Enter 发送，Shift+Enter 换行）" rows="2"></textarea>
@@ -207,6 +268,8 @@ async function streamReply() {
     }
 
     if (!fullText) fullText = "（模型没有返回文本内容，请重试）";
+    bubble.innerHTML = mdToHtml(fullText); // 流式结束后渲染 Markdown
+    scrollChat();
     state.chat.messages.push({ role: "assistant", content: fullText });
     saveState();
   } catch (e) {

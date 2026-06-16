@@ -151,8 +151,49 @@ function renderDashboard() {
       <div class="pct">${p.done}/${p.total} 课 · ${p.pct}%</div>
     </div>`;
   }
+  html += `
+  <div class="card" style="margin-top:26px">
+    <div style="font-weight:700;margin-bottom:6px">💾 学习进度备份</div>
+    <p class="notice">进度保存在本浏览器。换设备或清理缓存前，导出备份；之后导入即可恢复全部学习记录、测验成绩与闪卡复习计划。</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+      <button class="btn small" onclick="exportProgress()">导出备份</button>
+      <button class="btn small" onclick="document.getElementById('import-file').click()">导入备份</button>
+      <input type="file" id="import-file" accept="application/json" style="display:none" onchange="importProgress(this)">
+    </div>
+  </div>`;
   html += footer();
   $("#app").innerHTML = html;
+}
+
+function exportProgress() {
+  const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `ai-xuejing-backup-${todayStr()}.json`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function importProgress(inputEl) {
+  const file = inputEl.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const data = JSON.parse(reader.result);
+      if (!data || typeof data !== "object" || !("completed" in data))
+        throw new Error("文件格式不正确");
+      if (!confirm("导入将覆盖当前所有学习进度，确定继续？")) { inputEl.value = ""; return; }
+      state = Object.assign(defaultState(), data);
+      saveState();
+      alert("导入成功！");
+      location.hash = ""; navigate();
+    } catch (e) {
+      alert("导入失败：" + (e.message || "无法解析文件"));
+    }
+    inputEl.value = "";
+  };
+  reader.readAsText(file);
 }
 
 /* ---------------- 页面：学习路径 ---------------- */
